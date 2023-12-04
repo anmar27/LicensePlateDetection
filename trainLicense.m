@@ -143,10 +143,10 @@ datafeatures = datafeatures(1:300,1:3433);
 %% 
 %Training phase, trying to implement cascade mechanism 
 % Number of iterations for each AdaBoost model
-itt = 1;
+itt = 5;
 
 % Training each stage
-numberOfStages = 3;
+numberOfStages = 5;
 models = cell(1, numberOfStages);
 
 for stage = 1:numberOfStages
@@ -180,41 +180,60 @@ if isfile(inputImagePath)
     % Load the image
     inputImage = imread(inputImagePath);
 end
-matches = [];
-windowSize = [17, 47];
-stepSize = 5;
-fprintf("Starting SW approach\n");
 
-% Iterate over the image with the sliding window
+%Transform into grayscale inputImage
+
+matches = [];
+windowSize = [17, 47]; % Example window size
+stepSize = 5; % Example step size
+
+% Sliding window approach
 for x = 1:stepSize:(size(inputImage, 2) - windowSize(2))
     for y = 1:stepSize:(size(inputImage, 1) - windowSize(1))
-        % Extract the window
-        fprintf("Iaminside:)\n");
         window = inputImage(y:y+windowSize(1)-1, x:x+windowSize(2)-1);
+        windowFeatures = getHaarFeatures(window);
 
-        % Extract features from this window
-        windowFeatures = getHaarFeatures(window); % Define this function based on your feature extraction method
+        isPositive = true;
+        for stage = 1:numberOfStages
+            classificationScore = adaboost('apply', windowFeatures, models{stage});
+            if classificationScore ~= 1
+                isPositive = false;
+                break; % Window rejected by this stage
+            end
+        end
 
-        % Classify the window using the AdaBoost model
-        classificationScore = adaboost('apply', windowFeatures, model);
-        fprintf("%d",classificationScore)
-        % Check if the score is above a certain threshold
-        if classificationScore == 1
+        if isPositive
+            % Window passed all stages, mark as positive detection
             fprintf("Possible match in steps x:%d & y:%d",x,y);
             matches = [matches; x, y, classificationScore];
-            % This window is a potential match
-            % Store the window coordinates, size, and score for further processing
         end
     end
 end
 
 
 %% 
-% Assuming new_datafeatures is your new data
-new_estimateclass = adaboost('apply', datafeatures, model);
+%Displaying possible areas of interest
+imshow(inputImage);
+hold on; % This keeps the image displayed while we draw the rectangle
 
-% Display the predicted classes
-disp(new_estimateclass);
+% Assuming coords is a 2-element vector [x, y]
+
+x = matches(1);
+y = matches(2);
+
+% Define the width and height of the rectangle
+width = 47;
+height = 17;
+
+% Draw the rectangle
+for i = 1:size(matches, 1)
+    x = matches(i, 1);
+    y = matches(i, 2);
+
+    rectangle('Position', [x, y, width, height], 'EdgeColor', 'r', 'LineWidth', 2);
+end
+
+hold off; % Release the hold on the figure
 
 
 %% 
