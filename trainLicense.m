@@ -3,8 +3,6 @@
 clc;
 clear all;
 
-%Creation of "saving" arrays in case of paused training
-save1 =[];save2=[]; save3=[]; save4=[]; save5=[];
 
 positiveImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\positiveImages1';
 negativeImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\negativeimages1';
@@ -143,16 +141,38 @@ end
 datafeatures = datafeatures(1:300,1:3433);
 
 %% 
+%Training phase, trying to implement cascade mechanism 
+% Number of iterations for each AdaBoost model
+itt = 1;
+
+% Training each stage
+numberOfStages = 3;
+models = cell(1, numberOfStages);
+
+for stage = 1:numberOfStages
+    fprintf('Training stage %d\n', stage);
+    
+    [model, falsePositives] = trainCascadeStage(datafeatures, dataclass, itt);
+    models{stage} = model;
+    
+    % If there are more stages, add false positives to the training set
+    if stage < numberOfStages
+        % Update negative examples with false positives
+        numFalsePositives = size(falsePositives, 1);
+        datafeatures = [datafeatures; falsePositives]; % Add false positives to features
+        dataclass = [dataclass, -ones(1, numFalsePositives)]; % Add negative labels for false positives
+    end
+end
 % Number of iterations for AdaBoost
-itt = 3;
+%itt = 3;
 
 % Train the AdaBoost model
-[estimateclasstotal, model] = adaboost('train', datafeatures, dataclass, itt);
+%[estimateclasstotal, model] = adaboost('train', datafeatures, dataclass, itt);
 %% 
 
 % Calculate the training accuracy
-accuracy = sum(dataclass == estimateclasstotal) / length(dataclass);
-fprintf('Training Accuracy: %.2f%%\n', accuracy * 100);
+%accuracy = sum(dataclass == estimateclasstotal) / length(dataclass);
+%fprintf('Training Accuracy: %.2f%%\n', accuracy * 100);
 %% 
 %Sliding window approach to find 
 inputImagePath = "C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\001\CroppedVehicles\03490.jpg_vehicle_6.jpg";
@@ -197,48 +217,20 @@ new_estimateclass = adaboost('apply', datafeatures, model);
 disp(new_estimateclass);
 
 
-  %% 
-  
- % Use Adaboost to make a classifier
-  [classestimate,model]=adaboost('train',datafeatures,dataclass,2);
- % Training results
- % Show results
-  negative=datafeatures(classestimate==-1,:); positive=datafeatures(classestimate==1,:);
-  I=zeros(161,161);
-  for i=1:length(model)
-      if(model(i).dimension==1)
-          if(model(i).direction==1), rec=[-80 -80 80+model(i).threshold 160];
-          else rec=[model(i).threshold -80 80-model(i).threshold 160 ];
-          end
-      else
-          if(model(i).direction==1), rec=[-80 -80 160 80+model(i).threshold];
-          else rec=[-80 model(i).threshold 160 80-model(i).threshold];
-          end
-      end
-      rec=round(rec);
-      y=rec(1)+81:rec(1)+81+rec(3); x=rec(2)+81:rec(2)+81+rec(4);
-      I=I-model(i).alpha; I(x,y)=I(x,y)+2*model(i).alpha;    
-  end
- subplot(2,2,2), imshow(I,[]); colorbar; axis xy;
- colormap('jet'), hold on
- plot(negative(:,1)+81,negative(:,2)+81,'bo');
- plot(positive(:,1)+81,positive(:,2)+81,'ro');
- title('Training Data classified with adaboost model');
- % Show the error verus number of weak classifiers
- error=zeros(1,length(model)); for i=1:length(model), error(i)=model(i).error; end 
- subplot(2,2,3), plot(error); title('Classification error versus number of weak classifiers');
- % Make some test data
-  angle=rand(200,1)*2*pi; l=rand(200,1)*70; testdata=[sin(angle).*l cos(angle).*l];
- % Classify the testdata with the trained model
-  testclass=adaboost('apply',testdata,model);
- % Show result
-  negative=testdata(testclass==-1,:); positive=testdata(testclass==1,:);
- % Show the data
-  subplot(2,2,4), hold on
-  plot(negative(:,1),negative(:,2),'b*');
-  plot(positive(:,1),positive(:,2),'r*');
-  axis equal;
-  title('Test Data classified with adaboost model');
+%% 
+
+function [model, falsePositives] = trainCascadeStage(datafeatures, dataclass, itt)
+    % Train the AdaBoost model
+    [~, model] = adaboost('train', datafeatures, dataclass, itt);
+
+    % Apply the trained model to the data
+    estimateclass = adaboost('apply', datafeatures, model);
+    disp(size(estimateclass));
+    estimateclass = estimateclass';
+
+    % Identify false positives: Negative examples incorrectly classified as positive
+    falsePositives = datafeatures(estimateclass == 1 & dataclass == -1, :);
+end  
 
 %% 
 %%%Code that obtains the haarFeatures of one image
@@ -458,12 +450,12 @@ function [estimateclasstotal,model]=adaboost(mode,datafeatures,dataclass_or_mode
                 model(t).direction=h.direction;
                 model(t).boundary = boundary;
                 % We update D so that wrongly classified samples will have more weight
-                D = D.* exp(-model(t).alpha.*dataclass.*estimateclass);
+                D = D.* exp(-model(t).alpha.*dataclass.*estimateclass');
                 D = D./sum(D);
                 
                 % Calculate the current error of the cascade of weak
                 % classifiers
-                estimateclasssum=estimateclasssum +estimateclass*model(t).alpha;
+                estimateclasssum=estimateclasssum +estimateclass'*model(t).alpha;
                 estimateclasstotal=sign(estimateclasssum);
                 model(t).error=sum(estimateclasstotal~=dataclass)/length(dataclass);
                 if(model(t).error==0), break; end
