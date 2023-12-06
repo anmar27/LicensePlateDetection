@@ -9,8 +9,8 @@ negativeImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Es
 
 %positiveSize = numel(dir(positiveImagesFolder))-3;
 %negativeSize = numel(dir(negativeImagesFolder))-2;
-positiveSize = 100;
-negativeSize = 200;
+positiveSize = 10;
+negativeSize = 20;
 
 %%%Conversion to Integral Image%%%
 %Initialize image array
@@ -79,14 +79,14 @@ for i = 1:size(haars, 1)
     baseHaarHeight = haars(i, 2);
     
     % Iterate over possible scales
-    for scaleWidth = 1:(imageWidth / baseHaarWidth)
-        for scaleHeight = 1:(imageHeight / baseHaarHeight)
+    for scaleWidth = 1:((imageWidth-1) / baseHaarWidth)
+        for scaleHeight = 1:((imageHeight -1) / baseHaarHeight)
             haarWidth = baseHaarWidth * scaleWidth;
             haarHeight = baseHaarHeight * scaleHeight;
             
             % Number of positions where this scaled Haar feature can fit in the image
-            positionsX = imageWidth - haarWidth + 1;
-            positionsY = imageHeight - haarHeight + 1;
+            positionsX = (imageWidth - 1) - haarWidth + 1;
+            positionsY = (imageHeight - 1) - haarHeight + 1;
 
             % Total number of features of this type and scale
             numFeaturesThisTypeAndScale = positionsX * positionsY;
@@ -108,45 +108,60 @@ datafeatures = zeros(totalImages, numHaarFeatures);
 % Initialize the dataclass array
 dataclass = [ones(1, positiveSize), -ones(1, negativeSize)];
 
+% Initialize the mapping structure
+haarFeatureMapping = struct('haarType', {}, 'dimX', {}, 'dimY', {}, 'pixelX', {}, 'pixelY', {});
+
 % Loop over each image
 for imgIndex = 1:totalImages
     currentImage = allImages{imgIndex};
-    integralImage = currentImage; % Already an integral image
+    integralImage = currentImage; % Assuming this is already an integral image
 
     % Initialize a feature index for each image
     featureIndex = 1;
 
-    % Iterate over Haar types
+    % Iterate over Haar types and scales
     for haarType = 1:size(haars, 1)
-        dimX = haars(haarType, 1);
-        dimY = haars(haarType, 2);
+        baseDimX = haars(haarType, 1);
+        baseDimY = haars(haarType, 2);
 
-        % Iterate over positions and scales within the image
-        for pixelX = 1:(imageWidth - dimX)
-            for pixelY = 1:(imageHeight - dimY)
-                % Calculate Haar feature value
-                haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dimX, dimY);
-                fprintf('Haar Type: %d, Value: %f, dimX:%d, dimY:%d, pixelX:%d, pixelY:%d\n', haarType, haarValue,dimX,dimY,pixelX,pixelY);
-                % Store in datafeatures matrix
-                datafeatures(imgIndex, featureIndex) = haarValue;
+        % Iterate over scales
+        for scaleX = 1:(imageWidth / baseDimX)
+            for scaleY = 1:(imageHeight / baseDimY)
+                dimX = baseDimX * scaleX;
+                dimY = baseDimY * scaleY;
 
-                % Update featureIndex
-                featureIndex = featureIndex + 1;
+                % Iterate over positions within the image for the scaled Haar feature
+                for pixelX = 1:(imageWidth - dimX )
+                    for pixelY = 1:(imageHeight - dimY )
+                        % Calculate Haar feature value for the scaled feature
+                        haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dimX, dimY);
+                        fprintf('Haar Type: %d, Value: %f, dimX:%d, dimY:%d, pixelX:%d, pixelY:%d\n', haarType, haarValue, dimX, dimY, pixelX, pixelY)
+                        
+                        % Store in datafeatures matrix
+                        datafeatures(imgIndex, featureIndex) = haarValue;
+
+                        % Store the corresponding Haar feature attributes in the mapping
+                        haarFeatureMapping(featureIndex) = struct('haarType', haarType, 'dimX', dimX, 'dimY', dimY, 'pixelX', pixelX, 'pixelY', pixelY);
+
+                        % Update featureIndex
+                        featureIndex = featureIndex + 1;
+                    end
+                end
             end
         end
     end
 end
 
 %Limiting to 3433 since we are not sonsidering resized features
-datafeatures = datafeatures(1:300,1:3433);
+datafeatures = datafeatures(1:30,1:265144);
 
 %% 
 %Training phase, trying to implement cascade mechanism 
 % Number of iterations for each AdaBoost model
-itt = 5;
+itt = 10;
 
 % Training each stage
-numberOfStages = 5;
+numberOfStages = 2;
 models = cell(1, numberOfStages);
 
 for stage = 1:numberOfStages
@@ -173,9 +188,11 @@ end
 % Calculate the training accuracy
 %accuracy = sum(dataclass == estimateclasstotal) / length(dataclass);
 %fprintf('Training Accuracy: %.2f%%\n', accuracy * 100);
+
 %% 
+
 %Sliding window approach to find 
-inputImagePath = "C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\001\CroppedVehicles\06310.jpg_vehicle_10.jpg";
+inputImagePath = "C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\001\CroppedVehicles\00070.jpg_vehicle_5.jpg";
 if isfile(inputImagePath)
     % Load the image
     inputImage = imread(inputImagePath);
@@ -185,18 +202,22 @@ end
 inputImage = im2gray(inputImage);
 
 matches = [];
-windowSize = [17, 47]; % Example window size
-stepSize = 5; % Example step size
 
-% Sliding window approach
-for x = 1:stepSize:(size(inputImage, 2) - windowSize(2))
-    for y = 1:stepSize:(size(inputImage, 1) - windowSize(1))
+windowSize = [17, 47]; 
+stepSize = 5;
+
+maxX = size(inputImage, 2) - windowSize(2) + 1;
+maxY = size(inputImage, 1) - windowSize(1) + 1;
+
+for x = 1:stepSize:maxX
+    for y = 1:stepSize:maxY
         window = inputImage(y:y+windowSize(1)-1, x:x+windowSize(2)-1);
-        windowFeatures = getHaarFeatures(window);
+        %windowFeatures = getHaarFeatures(window);
 
         isPositive = true;
         for stage = 1:numberOfStages
-            classificationScore = adaboost('apply', windowFeatures, models{stage});
+            %classificationScore = adaboost('apply', windowFeatures, models{stage});
+            classificationScore = applyAdaboostModelToImage(models{stage}, window ,haarFeatureMapping);
             if classificationScore ~= 1
                 isPositive = false;
                 break; % Window rejected by this stage
@@ -213,6 +234,7 @@ end
 
 
 %% 
+
 %Displaying possible areas of interest
 imshow(inputImage);
 hold on; % This keeps the image displayed while we draw the rectangle
@@ -235,7 +257,9 @@ for i = 1:size(matches, 1)
 end
 
 hold off; % Release the hold on the figure
-
+%% 
+[thaarType, tpixelX, tpixelY, tdimX,tdimY] = mapIndexToHaarParameters(3433,haars,47,17);
+%}
 
 %% 
 
@@ -318,46 +342,49 @@ function intensity = getCorners(img,startX,startY,endX,endY)
     intensity = d-(b+c)+a; % by property of the integral image
 end
 
-function val = calcHaarVal(img,haar,pixelX,pixelY,haarX,haarY)
-% img: integral image of an input image
-% haar: which Haar feature (1-5)
-% pixelX/Y: start point in (X,Y)
-% haarX/Y: Haar feature size in X and Y directions
+function estimateclass = applyAdaboostModelToImage(model, inputImage, haarFeatureMapping)
+    % Preprocess the input image (this should match your training preprocessing)
+    % For example, if you used integral images:
+    % processedImage = integralImage(inputImage);
 
-% getCorners() finds the total of the pixel intensity values in a white/black "box"
-    moveX = haarX-1;
-    moveY = haarY-1;
-   
-    
-    if haar == 1 % top/down white-black
-        white = getCorners(img,pixelX,pixelY,pixelX+moveX,pixelY+floor(moveY/2));
-        test = floor(moveY/2);
-        fprintf("%f",test);
-        black = getCorners(img,pixelX,pixelY+ceil(moveY/2),pixelX+moveX,pixelY+moveY);
-        val = white-black;
-    elseif haar == 2 % left/right white-black
-        white = getCorners(img,pixelX,pixelY,pixelX+floor(moveX/2),pixelY+moveY);
-        black = getCorners(img,pixelX+ceil(moveX/2),pixelY,pixelX+moveX,pixelY+moveY);
-        val = white-black;
-    elseif haar == 3 % top/mid/bottom white-black-white
-        white1 = getCorners(img,pixelX,pixelY,pixelX+moveX,pixelY+floor(moveY/3));
-        black = getCorners(img,pixelX,pixelY+ceil(moveY/3),pixelX+moveX,pixelY+floor((moveY)*(2/3)));
-        white2 = getCorners(img,pixelX,pixelY+ceil((moveY)*(2/3)),pixelX+moveX,pixelY+moveY);
-        val = white1 + white2 - black;
-    elseif haar == 4 % left/mid/right white-black-white
-        white1 = getCorners(img,pixelX,pixelY,pixelX+floor(moveX/3),pixelY+moveY);
-        black = getCorners(img,pixelX+ceil(moveX/3),pixelY,pixelX+floor((moveX)*(2/3)),pixelY+moveY);
-        white2 = getCorners(img,pixelX+ceil((moveX)*(2/3)),pixelY,pixelX+moveX,pixelY+moveY);
-        val = white1 + white2 - black;
-    elseif haar == 5 % checkerboard-style white-black-white-black
-        white1 = getCorners(img,pixelX,pixelY,pixelX+floor(moveX/2),pixelY+floor(moveY/2));
-        black1 = getCorners(img,pixelX+ceil(moveX/2),pixelY,pixelX+moveX,pixelY+floor(moveY/2));
-        black2 = getCorners(img,pixelX,pixelY+ceil(moveY/2),pixelX+floor(moveX/2),pixelY+moveY);
-        white2 = getCorners(img,pixelX+ceil(moveX/2),pixelY+ceil(moveY/2),pixelX+moveX,pixelY+moveY);
-        val = white1+white2-(black1+black2);
+    % Initialize the sum of weak classifier results
+    estimateclasssum = 0;
+
+    % Loop through each weak classifier in the model
+    for t = 1:length(model)
+        % Extract the relevant features for this classifier
+        % This is highly dependent on how your features are defined
+        % For example, if your features are Haar-like:
+        
+        %Retrieve values based on the haarFeatureMapping 
+        haarTypeValue = haarFeatureMapping(model(t).dimension).haarType;
+        dimXValue = haarFeatureMapping(model(t).dimension).dimX;
+        dimYValue = haarFeatureMapping(model(t).dimension).dimY;
+        pixelXValue = haarFeatureMapping(model(t).dimension).pixelX;
+        pixelYValue = haarFeatureMapping(model(t).dimension).pixelY;
+
+        featureValue = calcHaarValues(inputImage, haarTypeValue, dimXValue, dimYValue, pixelXValue,pixelYValue);
+        
+        % Apply the weak classifier threshold
+        if model(t).direction == 1
+            weakResult = double(featureValue >= model(t).threshold);
+        else
+            weakResult = double(featureValue < model(t).threshold);
+        end
+        weakResult(weakResult == 0) = -1;
+
+        % Add to the sum of weak classifier results, weighted by alpha
+        estimateclasssum = estimateclasssum + model(t).alpha * weakResult;
     end
+
+    % Final classification decision
+    estimateclass = sign(estimateclasssum);
 end
 
+function featureValue = calcHaarFeature (inputImage, haarTypeValue, dimXValue, dimYValue, pixelXValue,pixelYValue)
+%Calculates an specific
+
+end
 
 function haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dimX, dimY)
     % integralImage: The integral image
@@ -374,7 +401,7 @@ function haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dim
 
      switch haarType
         case 1 % Horizontal two-rectangle feature
-            midY = pixelY + dimY/2;
+            midY = pixelY + floor(dimY/2);
             topSum = rectSum(pixelX, pixelY, pixelX + dimX, midY);
             bottomSum = rectSum(pixelX, midY, pixelX + dimX, pixelY + dimY);
             haarValue = topSum - bottomSum;
@@ -412,7 +439,7 @@ end
 
 function [estimateclasstotal,model]=adaboost(mode,datafeatures,dataclass_or_model,itt)
 % This function AdaBoost, consist of two parts a simpel weak classifier and
-% a boosting part:
+% a boostitg part:
 % The weak classifier tries to find the best treshold in one of the data
 % dimensions to sepparate the data into two classes -1 and 1
 % The boosting part calls the clasifier iteratively, after every classification
@@ -512,7 +539,7 @@ function [estimateclass,err,h] = WeightedThresholdClassifier(datafeatures,datacl
 % It then selects the dimension and  treshold which divides the 
 % data into two class with the smallest error.
 % Number of treshold steps
-ntre=2e5;
+ntre=2e3;
 % Split the data in two classes 1 and -1
 r1=datafeatures(dataclass<0,:); w1=dataweight(dataclass<0);
 r2=datafeatures(dataclass>0,:); w2=dataweight(dataclass>0);
