@@ -9,8 +9,8 @@ negativeImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Es
 
 %positiveSize = numel(dir(positiveImagesFolder))-3;
 %negativeSize = numel(dir(negativeImagesFolder))-2;
-positiveSize = 10;
-negativeSize = 20;
+positiveSize = 15;
+negativeSize = 30;
 
 %%%Conversion to Integral Image%%%
 %Initialize image array
@@ -153,7 +153,14 @@ for imgIndex = 1:totalImages
 end
 
 %Limiting to 3433 since we are not sonsidering resized features
-datafeatures = datafeatures(1:30,1:265144);
+%datafeatures = datafeatures(1:30,1:265144);
+
+% Create a dynamic filename based on positiveSize and negativeSize for
+% easier use for trainning part
+filename = sprintf('dataFeaturesClass_Pos%d_Neg%d.mat', positiveSize, negativeSize);
+
+% Save the datafeatures and dataclass variables to the dynamically named .mat file
+save(filename, 'datafeatures', 'dataclass');
 
 %% 
 %Training phase, trying to implement cascade mechanism 
@@ -161,7 +168,7 @@ datafeatures = datafeatures(1:30,1:265144);
 itt = 10;
 
 % Training each stage
-numberOfStages = 2;
+numberOfStages = 3;
 models = cell(1, numberOfStages);
 
 for stage = 1:numberOfStages
@@ -178,11 +185,7 @@ for stage = 1:numberOfStages
         dataclass = [dataclass, -ones(1, numFalsePositives)]; % Add negative labels for false positives
     end
 end
-% Number of iterations for AdaBoost
-%itt = 3;
 
-% Train the AdaBoost model
-%[estimateclasstotal, model] = adaboost('train', datafeatures, dataclass, itt);
 %% 
 
 % Calculate the training accuracy
@@ -192,7 +195,7 @@ end
 %% 
 
 %Sliding window approach to find 
-inputImagePath = "C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\001\CroppedVehicles\00070.jpg_vehicle_5.jpg";
+inputImagePath = "C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\001\CroppedVehicles\00400.jpg_vehicle_3.jpg";
 if isfile(inputImagePath)
     % Load the image
     inputImage = imread(inputImagePath);
@@ -257,9 +260,7 @@ for i = 1:size(matches, 1)
 end
 
 hold off; % Release the hold on the figure
-%% 
-[thaarType, tpixelX, tpixelY, tdimX,tdimY] = mapIndexToHaarParameters(3433,haars,47,17);
-%}
+
 
 %% 
 
@@ -381,10 +382,6 @@ function estimateclass = applyAdaboostModelToImage(model, inputImage, haarFeatur
     estimateclass = sign(estimateclasssum);
 end
 
-function featureValue = calcHaarFeature (inputImage, haarTypeValue, dimXValue, dimYValue, pixelXValue,pixelYValue)
-%Calculates an specific
-
-end
 
 function haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dimX, dimY)
     % integralImage: The integral image
@@ -458,10 +455,6 @@ function [estimateclasstotal,model]=adaboost(mode,datafeatures,dataclass_or_mode
 %    itt : The number of training itterations
 %    model : A struct with the cascade of weak-classifiers
 %    estimateclass : The by the adaboost model classified data
-%               
-%  %% Example
-%
-%  example.m
 %
 %  Function is written by D.Kroon University of Twente (August 2010)
 switch(mode)
