@@ -9,8 +9,8 @@ negativeImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Es
 
 %positiveSize = numel(dir(positiveImagesFolder))-3;
 %negativeSize = numel(dir(negativeImagesFolder))-2;
-positiveSize = 15;
-negativeSize = 30;
+positiveSize = 100;
+negativeSize = 200;
 
 %%%Conversion to Integral Image%%%
 %Initialize image array
@@ -61,7 +61,6 @@ end
     % pixelX, pixelY = the x,y index value for the starting pixel of
     % each haar feature
     % haarX, haarY = the x,y dimensions of the transformed haar features
-
     % Haar feature dimensions
 % Haar feature dimensions
 haars = [1,2; 2,1; 1,3; 3,1; 2,2];
@@ -152,12 +151,9 @@ for imgIndex = 1:totalImages
     end
 end
 
-%Limiting to 3433 since we are not sonsidering resized features
-%datafeatures = datafeatures(1:30,1:265144);
-
 % Create a dynamic filename based on positiveSize and negativeSize for
 % easier use for trainning part
-filename = sprintf('dataFeaturesClass_Pos%d_Neg%d.mat', positiveSize, negativeSize);
+filename = sprintf('dataFeaturesTestClass_Pos%d_Neg%d.mat', positiveSize, negativeSize);
 
 % Save the datafeatures and dataclass variables to the dynamically named .mat file
 save(filename, 'datafeatures', 'dataclass');
@@ -165,10 +161,10 @@ save(filename, 'datafeatures', 'dataclass');
 %% 
 %Training phase, trying to implement cascade mechanism 
 % Number of iterations for each AdaBoost model
-itt = 10;
+itt = 5;
 
 % Training each stage
-numberOfStages = 3;
+numberOfStages = 1;
 models = cell(1, numberOfStages);
 
 for stage = 1:numberOfStages
@@ -195,7 +191,7 @@ end
 %% 
 
 %Sliding window approach to find 
-inputImagePath = "C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\001\CroppedVehicles\00400.jpg_vehicle_3.jpg";
+inputImagePath = "C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\001\CroppedVehicles\06070.jpg_vehicle_6.jpg";
 if isfile(inputImagePath)
     % Load the image
     inputImage = imread(inputImagePath);
@@ -265,10 +261,9 @@ hold off; % Release the hold on the figure
 %% 
 
 function [model, falsePositives] = trainCascadeStage(datafeatures, dataclass, itt)
-    % Train the AdaBoost model
+    
     [~, model] = adaboost('train', datafeatures, dataclass, itt);
 
-    % Apply the trained model to the data
     estimateclass = adaboost('apply', datafeatures, model);
     disp(size(estimateclass));
     estimateclass = estimateclass';
@@ -347,6 +342,8 @@ function estimateclass = applyAdaboostModelToImage(model, inputImage, haarFeatur
     % Preprocess the input image (this should match your training preprocessing)
     % For example, if you used integral images:
     % processedImage = integralImage(inputImage);
+    inputImage = integralImg(inputImage);
+
 
     % Initialize the sum of weak classifier results
     estimateclasssum = 0;
@@ -398,34 +395,34 @@ function haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dim
 
      switch haarType
         case 1 % Horizontal two-rectangle feature
-            midY = pixelY + floor(dimY/2);
+            midY = pixelY + round(dimY/2);
             topSum = rectSum(pixelX, pixelY, pixelX + dimX, midY);
             bottomSum = rectSum(pixelX, midY, pixelX + dimX, pixelY + dimY);
             haarValue = topSum - bottomSum;
 
         case 2 % Vertical two-rectangle feature
-            midX = pixelX + dimX/2;
+            midX = pixelX + round(dimX/2);
             leftSum = rectSum(pixelX, pixelY, midX, pixelY + dimY);
             rightSum = rectSum(midX, pixelY, pixelX + dimX, pixelY + dimY);
             haarValue = leftSum - rightSum;
 
         case 3 % Horizontal three-rectangle feature
-            thirdY = dimY / 3;
+            thirdY = round(dimY / 3);
             topSum = rectSum(pixelX, pixelY, pixelX + dimX, pixelY + thirdY);
             middleSum = rectSum(pixelX, pixelY + thirdY, pixelX + dimX, pixelY + 2*thirdY);
             bottomSum = rectSum(pixelX, pixelY + 2*thirdY, pixelX + dimX, pixelY + dimY);
             haarValue = topSum - 2*middleSum + bottomSum;
 
         case 4 % Vertical three-rectangle feature
-            thirdX = dimX / 3;
+            thirdX = round(dimX / 3);
             leftSum = rectSum(pixelX, pixelY, pixelX + thirdX, pixelY + dimY);
             middleSum = rectSum(pixelX + thirdX, pixelY, pixelX + 2*thirdX, pixelY + dimY);
             rightSum = rectSum(pixelX + 2*thirdX, pixelY, pixelX + dimX, pixelY + dimY);
             haarValue = leftSum - 2*middleSum + rightSum;
 
         case 5 % Four-rectangle feature
-            midX = pixelX + dimX/2;
-            midY = pixelY + dimY/2;
+            midX = pixelX + round(dimX/2);
+            midY = pixelY + round(dimY/2);
             topLeftSum = rectSum(pixelX, pixelY, midX, midY);
             topRightSum = rectSum(midX, pixelY, pixelX + dimX, midY);
             bottomLeftSum = rectSum(pixelX, midY, midX, pixelY + dimY);
@@ -447,7 +444,6 @@ function [estimateclasstotal,model]=adaboost(mode,datafeatures,dataclass_or_mode
 %    [estimateclass,model]=adaboost('train',datafeatures,dataclass,itt)
 %  Apply mode:
 %    estimateclass=adaboost('apply',datafeatures,model)
-% 
 %  inputs/outputs:
 %    datafeatures : An Array with size number_samples x number_features
 %    dataclass : An array with the class off all examples, the class
@@ -455,8 +451,6 @@ function [estimateclasstotal,model]=adaboost(mode,datafeatures,dataclass_or_mode
 %    itt : The number of training itterations
 %    model : A struct with the cascade of weak-classifiers
 %    estimateclass : The by the adaboost model classified data
-%
-%  Function is written by D.Kroon University of Twente (August 2010)
 switch(mode)
     case 'train'
         % Train the adaboost model
