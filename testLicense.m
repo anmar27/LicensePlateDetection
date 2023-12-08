@@ -2,14 +2,14 @@
 %enhance the object detection
 clear all;
 clc; 
-positiveImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\positiveImages1';
-negativeImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\negativeimages1';
+positiveImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\testpositive';
+negativeImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\testnegatives';
 
 %Image selection
-displacement = 500;
+displacement = 0;
 
-positiveSize = 20;
-negativeSize = 40;
+positiveSize = 4;
+negativeSize = 4;
 
 %%%Conversion to Integral Image%%%
 %Initialize image array
@@ -18,9 +18,9 @@ nonLicenses = cell(1,negativeSize);
 
 %Iteration through every image with license plate
 fprintf('License Images Reading...\n');
-for LicenseNum = displacement:positiveSize+displacement
+for LicenseNum = 1:positiveSize+displacement
 
-    str = 'positiveImages1/';
+    str = 'testpositive/';
     img = sprintf('Cars_%d',LicenseNum);
     fullPath = strcat(str,img,'.jpg');
     img = imread(fullPath);
@@ -32,10 +32,10 @@ end
 allImages = Licenses;
 
 % iterate through each non-License image to get corresponding integral images
-fprintf('Reading Non-Face Images\n');
-for nonLicenseNum = displacement:negativeSize+displacement 
+fprintf('Reading Non-License Images\n');
+for nonLicenseNum = 1:negativeSize+displacement 
     % read non-license image
-    str = 'negativeImages1/';
+    str = 'testnegatives/';
     img = sprintf('Cars_%d',nonLicenseNum);
     fullPath = strcat(str,img,'.jpg');
     disp(fullPath)
@@ -102,16 +102,16 @@ fprintf('Total number of Haar features considering scales: %d\n', numHaarFeature
 totalImages = positiveSize + negativeSize;
 
 % Initialize the datafeatures matrix
-datafeatures = zeros(totalImages, numHaarFeatures);
+datafeaturesTest = zeros(totalImages, numHaarFeatures);
 
 % Initialize the dataclass array
-dataclass = [ones(1, positiveSize), -ones(1, negativeSize)];
+dataclassTest = [ones(1, positiveSize), -ones(1, negativeSize)];
 
 % Initialize the mapping structure
 haarFeatureMapping = struct('haarType', {}, 'dimX', {}, 'dimY', {}, 'pixelX', {}, 'pixelY', {});
 
 % Loop over each image
-for imgIndex = displacement:totalImages
+for imgIndex = 1:totalImages+displacement
     currentImage = allImages{imgIndex};
     integralImage = currentImage; % Assuming this is already an integral image
 
@@ -137,7 +137,7 @@ for imgIndex = displacement:totalImages
                         fprintf('Haar Type: %d, Value: %f, dimX:%d, dimY:%d, pixelX:%d, pixelY:%d\n', haarType, haarValue, dimX, dimY, pixelX, pixelY)
                         
                         % Store in datafeatures matrix
-                        datafeatures(imgIndex, featureIndex) = haarValue;
+                        datafeaturesTest(imgIndex, featureIndex) = haarValue;
 
                         % Store the corresponding Haar feature attributes in the mapping
                         haarFeatureMapping(featureIndex) = struct('haarType', haarType, 'dimX', dimX, 'dimY', dimY, 'pixelX', pixelX, 'pixelY', pixelY);
@@ -151,12 +151,16 @@ for imgIndex = displacement:totalImages
     end
 end
 
+datafeaturesTest = datafeaturesTest(end-(totalImages-1):end, :);
 % Create a dynamic filename based on positiveSize and negativeSize for
 % easier use for trainning part
 filename = sprintf('dataFeaturesTestClass_Pos%d_Neg%d.mat', positiveSize, negativeSize);
 
 % Save the datafeatures and dataclass variables to the dynamically named .mat file
-save(filename, 'datafeatures', 'dataclass');
+save(filename, 'datafeaturesTest', 'dataclassTest');
+
+%% 
+
 
 function haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dimX, dimY)
     % integralImage: The integral image

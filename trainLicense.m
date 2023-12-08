@@ -4,13 +4,13 @@ clc;
 clear all;
 
 
-positiveImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\positiveImages1';
-negativeImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\negativeimages1';
+positiveImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\positive';
+negativeImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\negative';
 
 %positiveSize = numel(dir(positiveImagesFolder))-3;
 %negativeSize = numel(dir(negativeImagesFolder))-2;
-positiveSize = 100;
-negativeSize = 200;
+positiveSize = 20;
+negativeSize = 24;
 
 %%%Conversion to Integral Image%%%
 %Initialize image array
@@ -21,10 +21,15 @@ nonLicenses = cell(1,negativeSize);
 fprintf('License Images Reading...\n');
 for LicenseNum = 1:positiveSize
 
-    str = 'positiveImages1/';
+    str = 'positive/';
     img = sprintf('Cars_%d',LicenseNum);
     fullPath = strcat(str,img,'.jpg');
+    disp(fullPath)
+    if ~exist(fullPath, 'file')
+        continue; % Skip to the next iteration if the image does not exist
+    end
     img = imread(fullPath);
+    img = im2gray(img);
     % convert to integral image
     integral = integralImg(img);
     % append to image array
@@ -33,10 +38,10 @@ end
 allImages = Licenses;
 
 % iterate through each non-License image to get corresponding integral images
-fprintf('Reading Non-Face Images\n');
+fprintf('Reading Non-License Images\n');
 for nonLicenseNum = 1:negativeSize 
     % read non-license image
-    str = 'negativeImages1/';
+    str = 'negative/';
     img = sprintf('Cars_%d',nonLicenseNum);
     fullPath = strcat(str,img,'.jpg');
     disp(fullPath)
@@ -46,6 +51,8 @@ for nonLicenseNum = 1:negativeSize
     end
 
     img = imread(fullPath);
+    %Assure is in gray scale
+    img = im2gray(img);
     % convert to integral image
     integral = integralImg(img);
     % append to image array
@@ -153,25 +160,32 @@ end
 
 % Create a dynamic filename based on positiveSize and negativeSize for
 % easier use for trainning part
-filename = sprintf('dataFeaturesTestClass_Pos%d_Neg%d.mat', positiveSize, negativeSize);
+filename = sprintf('dataFeaturesClass_Pos%d_Neg%d.mat', positiveSize, negativeSize);
 
 % Save the datafeatures and dataclass variables to the dynamically named .mat file
-save(filename, 'datafeatures', 'dataclass');
+save(filename, 'datafeatures', 'dataclass',"haarFeatureMapping");
 
 %% 
 %Training phase, trying to implement cascade mechanism 
+%Load dafeatures sets
+load("dataFeaturesClass_Pos400_Neg450.mat","datafeatures","dataclass","haarFeatureMapping");
+load("dataFeaturesTestClass_Pos20_Neg30.mat","datafeaturesTest","dataclassTest");
+datafeaturesTest = datafeaturesTest(end-(49):end, :);
+
 % Number of iterations for each AdaBoost model
-itt = 5;
+
+itt = 25;
 
 % Training each stage
-numberOfStages = 1;
+numberOfStages = 4;
 models = cell(1, numberOfStages);
 
 for stage = 1:numberOfStages
     fprintf('Training stage %d\n', stage);
     
-    [model, falsePositives] = trainCascadeStage(datafeatures, dataclass, itt);
+    [model, falsePositives] = trainCascadeStage(datafeaturesTest,dataclassTest,datafeatures, dataclass, itt);
     models{stage} = model;
+    disp(size(falsePositives))
     
     % If there are more stages, add false positives to the training set
     if stage < numberOfStages
@@ -182,6 +196,11 @@ for stage = 1:numberOfStages
     end
 end
 
+filename = sprintf('model_itt_%d_nOfStages_%d_size_%d.mat', itt, numberOfStages,size(datafeatures(:,1)));
+
+% Save the datafeatures and dataclass variables to the dynamically named .mat file
+save(filename, "models");
+
 %% 
 
 % Calculate the training accuracy
@@ -189,44 +208,51 @@ end
 %fprintf('Training Accuracy: %.2f%%\n', accuracy * 100);
 
 %% 
-
+clc;
 %Sliding window approach to find 
-inputImagePath = "C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\001\CroppedVehicles\06070.jpg_vehicle_6.jpg";
+inputImagePath = "C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\001\CroppedVehicles\00430.jpg_vehicle_2.jpg";
 if isfile(inputImagePath)
-    % Load the image
-    inputImage = imread(inputImagePath);
+    % Load the original image
+    originalImage = imread(inputImagePath);
 end
 
-%Transform into grayscale inputImage
-inputImage = im2gray(inputImage);
-
 matches = [];
+originalImage = im2gray(originalImage);
+scales = [1];%, 1.25, 1.4,1.55,1.7]; 
+baseWindowSize = [17, 47]; 
+baseStepSize = 5; % Base step size for scale 1
 
-windowSize = [17, 47]; 
-stepSize = 5;
+for scale = scales
+    % Rescale image
+    inputImage = imresize(originalImage, scale);
 
-maxX = size(inputImage, 2) - windowSize(2) + 1;
-maxY = size(inputImage, 1) - windowSize(1) + 1;
+    % Adjust window size and step size based on scale
+    windowSize = round(baseWindowSize * scale);
+    stepSize = round(baseStepSize * scale);
 
-for x = 1:stepSize:maxX
-    for y = 1:stepSize:maxY
-        window = inputImage(y:y+windowSize(1)-1, x:x+windowSize(2)-1);
-        %windowFeatures = getHaarFeatures(window);
+    maxX = size(inputImage, 2) - windowSize(2) + 1;
+    maxY = size(inputImage, 1) - windowSize(1) + 1;
 
-        isPositive = true;
-        for stage = 1:numberOfStages
-            %classificationScore = adaboost('apply', windowFeatures, models{stage});
-            classificationScore = applyAdaboostModelToImage(models{stage}, window ,haarFeatureMapping);
-            if classificationScore ~= 1
-                isPositive = false;
-                break; % Window rejected by this stage
+    for x = 1:stepSize:maxX
+        for y = 1:stepSize:maxY
+            window = inputImage(y:y+windowSize(1)-1, x:x+windowSize(2)-1);
+            normalizedWindow = imresize(window, baseWindowSize);
+           
+            isPositive = true;
+            for stage = 1:numberOfStages
+                %classificationScore = adaboost('apply', windowFeatures, models{stage});
+                classificationScore = applyAdaboostModelToImage(models{stage}, normalizedWindow ,haarFeatureMapping);
+                if classificationScore ~= 1
+                    isPositive = false;
+                    break; % Window rejected by this stage
+                end
             end
-        end
 
-        if isPositive
-            % Window passed all stages, mark as positive detection
-            fprintf("Possible match in steps x:%d & y:%d",x,y);
-            matches = [matches; x, y, classificationScore];
+            if isPositive
+                % Window passed all stages, mark as positive detection
+                fprintf("Possible match in steps x:%d & y:%d",x,y);
+                matches = [matches; x, y, classificationScore,scale];
+            end
         end
     end
 end
@@ -244,13 +270,16 @@ x = matches(1);
 y = matches(2);
 
 % Define the width and height of the rectangle
-width = 47;
-height = 17;
 
 % Draw the rectangle
 for i = 1:size(matches, 1)
+    width = 47;
+    height = 17;
     x = matches(i, 1);
     y = matches(i, 2);
+    scale = matches(i,4);
+    width = round(width*scale);
+    height = round(height*scale);
 
     rectangle('Position', [x, y, width, height], 'EdgeColor', 'r', 'LineWidth', 2);
 end
@@ -260,16 +289,16 @@ hold off; % Release the hold on the figure
 
 %% 
 
-function [model, falsePositives] = trainCascadeStage(datafeatures, dataclass, itt)
+function [model, falsePositives] = trainCascadeStage(datafeaturesTest,dataclassTest,datafeatures, dataclass, itt)
     
     [~, model] = adaboost('train', datafeatures, dataclass, itt);
 
-    estimateclass = adaboost('apply', datafeatures, model);
+    estimateclass = adaboost('apply', datafeaturesTest, model);
     disp(size(estimateclass));
     estimateclass = estimateclass';
 
     % Identify false positives: Negative examples incorrectly classified as positive
-    falsePositives = datafeatures(estimateclass == 1 & dataclass == -1, :);
+    falsePositives = datafeatures(estimateclass == 1 & dataclassTest == -1, :);
 end  
 
 %% 
