@@ -5,7 +5,7 @@ positive_or_negative= "negatives";
 n_crops = 4;
 
 % Folder where cropped vehicles are stored
-folderPath = ['C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\002']; 
+folderPath = ['..\CV-Project\Project CV\002']; 
 subDirPath = fullfile(folderPath,positive_or_negative); % Subdirectory for negatives
 
 % Get a list of all files in the folder
