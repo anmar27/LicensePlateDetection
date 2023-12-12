@@ -245,8 +245,6 @@ for iterations = 1:itt
         printout = strcat('Finished Haar #',int2str(haarType),'\n');
         fprintf(printout);
     end 
-end
-%% 
 
 %Sorting the weak classifiers based on alpha values
 fprintf('Make strong classifiers from sorting according to alpha values\n');
@@ -278,7 +276,7 @@ save('finalClassifiers.mat','selectedClassifiers');
 %% 
 %Detection Part Based on final classifier model
 
-Licenses,LicensesBounds = detectLicenses('C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\002\CroppedVehicles\002_04320.jpg_vehicle_5.jpg')
+Licenses,LicensesBounds = detectLicenses('C:\Users\Usuario\Matlab Uni\CV-Project\Project CV\002\CroppedVehicles\002_04320.jpg_vehicle_5.jpg');
 
 %% 
 
@@ -329,7 +327,7 @@ stage7 = selectedClassifiers(200:300,:);
                 end
                 window = intImg(i:i+17, j:j+46); 
     
-                stages = {stage1, stage2, ... ,stage7};
+                stages = {stage1, stage2, stage3,stage4,stage5,stage6,stage7};
                 thresholds = [1,0.5,0.5,0.5,0.6,0.6,0.6];
                 if checkCascade(stages, window, thresholds)
                     % save rectangular corner coordinates
@@ -346,15 +344,9 @@ stage7 = selectedClassifiers(200:300,:);
         [m, n] = size(img);
         intImg = integralImg(img);
     end
-    % create next image pyramid level
-    tempImg = imresize(img,.8);
-    img = tempImg;
-    [m,n] = size(img);
-    intImg = integralImg(img);
-end
 
 if size(Licenses,1) == 0 % No License detected
-   error('No License detected! Try again with a larger value of scanItr.'); 
+   error('No License detected! Try again with a larger value of pyramidItt.'); 
 end
 
 %Selecting best bound box
