@@ -4,13 +4,14 @@ clc;
 clear all;
 
 
-positiveImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\positiveImages1';
-negativeImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\negativeimages1';
+positiveImagesFolder = '../positiveFolder';
+negativeImagesFolder = '../negativeFolder';
 
 %positiveSize = numel(dir(positiveImagesFolder))-3;
 %negativeSize = numel(dir(negativeImagesFolder))-2;
-positiveSize = 100;
-negativeSize = 200;
+positiveSize = 600;
+negativeSize = 850;
+imgsSize = 600+850;
 
 %%%Conversion to Integral Image%%%
 %Initialize image array
@@ -21,24 +22,29 @@ nonLicenses = cell(1,negativeSize);
 fprintf('License Images Reading...\n');
 for LicenseNum = 1:positiveSize
 
-    str = 'positiveImages1/';
-    img = sprintf('Cars_%d',LicenseNum);
-    fullPath = strcat(str,img,'.jpg');
+    str = 'positive/';
+    img = sprintf('Cars%d',LicenseNum);
+    fullPath = strcat(str,img,'.png');
+    disp(fullPath)
+    if ~exist(fullPath, 'file')
+        continue; % Skip to the next iteration if the image does not exist
+    end
     img = imread(fullPath);
+    img = im2gray(img);
     % convert to integral image
-    integral = integralImg(img);
+    integralImgage = integralImgage(img);
     % append to image array
-    Licenses{LicenseNum} = integral;
+    Licenses{LicenseNum} = integralImgage;
 end
 allImages = Licenses;
 
 % iterate through each non-License image to get corresponding integral images
-fprintf('Reading Non-Face Images\n');
+fprintf('Reading Non-License Images\n');
 for nonLicenseNum = 1:negativeSize 
     % read non-license image
-    str = 'negativeImages1/';
-    img = sprintf('Cars_%d',nonLicenseNum);
-    fullPath = strcat(str,img,'.jpg');
+    str = 'negative/';
+    img = sprintf('random_Cars%d',nonLicenseNum);
+    fullPath = strcat(str,img,'.png');
     disp(fullPath)
     % Check if the image exists
     if ~exist(fullPath, 'file')
@@ -46,32 +52,32 @@ for nonLicenseNum = 1:negativeSize
     end
 
     img = imread(fullPath);
+    %Assure is in gray scale
+    img = im2gray(img);
     % convert to integral image
-    integral = integralImg(img);
+    integralImgage = integralImgage(img);
     % append to image array
-    nonLicenses{nonLicenseNum} = integral;
+    nonLicenses{nonLicenseNum} = integralImgage;
     % append to full list of images
-    allImages{nonLicenseNum+positiveSize} = integral;
+    allImages{nonLicenseNum+positiveSize} = integralImgage;
 end
 
-%%% Construction of Haar Feature %%%
-
+%Construction of Haar Features
+%%% Variable Definitions %%%
     % haar = the haar-like feature type
     % dimX, dimY = the x,y dimensions of the original haar features
     % pixelX, pixelY = the x,y index value for the starting pixel of
     % each haar feature
     % haarX, haarY = the x,y dimensions of the transformed haar features
 
-    % Haar feature dimensions
-% Haar feature dimensions
-haars = [1,2; 2,1; 1,3; 3,1; 2,2];
-
-% Image dimensions
-imageWidth = 47;
-imageHeight = 17;
-
-% Initialize total number of features
-numHaarFeatures = 0;
+fprintf('Constructing Haar Features\n');
+% initialize image weights
+imgWeights = ones(positiveSize+negativeSize,1)./(positiveSize+negativeSize);
+% matrix of haar feature dimensions
+haars = [1,2;2,1;1,3;3,1;2,2];
+% size of training images
+windowY = 17;
+windowX = 47;
 
 % Calculate the number of features for each Haar type and scale
 for i = 1:size(haars, 1)
@@ -79,14 +85,14 @@ for i = 1:size(haars, 1)
     baseHaarHeight = haars(i, 2);
     
     % Iterate over possible scales
-    for scaleWidth = 1:(imageWidth / baseHaarWidth)
-        for scaleHeight = 1:(imageHeight / baseHaarHeight)
+    for scaleWidth = 1:((imageWidth-1) / baseHaarWidth)
+        for scaleHeight = 1:((imageHeight -1) / baseHaarHeight)
             haarWidth = baseHaarWidth * scaleWidth;
             haarHeight = baseHaarHeight * scaleHeight;
             
             % Number of positions where this scaled Haar feature can fit in the image
-            positionsX = imageWidth - haarWidth + 1;
-            positionsY = imageHeight - haarHeight + 1;
+            positionsX = (imageWidth - 1) - haarWidth + 1;
+            positionsY = (imageHeight - 1) - haarHeight + 1;
 
             % Total number of features of this type and scale
             numFeaturesThisTypeAndScale = positionsX * positionsY;
@@ -100,266 +106,331 @@ end
 % Output total number of Haar features
 fprintf('Total number of Haar features considering scales: %d\n', numHaarFeatures);
 
-totalImages = positiveSize + negativeSize;
+%number of training itteration
+itt =  3;
 
-% Initialize the datafeatures matrix
-datafeatures = zeros(totalImages, numHaarFeatures);
+%number of training iterations
+for iterations = 1:itt
+    % initialize classifier container
+    weakClassifiers = {};
+    % iterate through features
+    for haarType = 1:5
+        printout = strcat('Working on Haar #',int2str(haarType),'\n');
+        fprintf(printout);
+        % get x dimension
+        dimX = haars(haarType,1);
+        % get y dimension
+        dimY = haars(haarType,2);
+        % iterate through available pixels in window
+        for pixelX = 2:windowX-dimX
+            for pixelY = 2:windowY-dimY
+                % iterate through possible haar dimensions for pixel
+                for haarX = dimX:dimX:windowX-pixelX
+                    for haarY = dimY:dimY:windowY-pixelY
+                        %Initalization of vectors of Haar Features for both
 
-% Initialize the dataclass array
-dataclass = [ones(1, positiveSize), -ones(1, negativeSize)];
+                         haarVector_NonLicenses = zeros(1,negativeSize);
+                         haarVector_Licenses = zeros(1,positiveSize);
+                         % Iterate through each integral image in License array
+                         for img = 1:positiveSize
+                             % calculate resulting feature value for each image
+                             value = calcHaarValues(Licenses{img},haarType,pixelX,pixelY,haarX,haarY);
+                             % store feature value
+                            haarVector_Licenses(img) = value;
+                         end
+                        
+                          % Iterate through each integral image in the nonLicense array
+                          for img = 1:negativeSize
+                             % calculate resulting feature value for each image
+                             value = calcHaarValues(nonLicenses{img},haarType,pixelX,pixelY,haarX,haarY);
+                             % store feature value
+                            haarVector_NonLicenses(img) = value;
+                         end
+                        
+                          % Create variables with distribution values of haar features in positive & negative images
+                          LicenseMax = max(haarVector_Licenses);
+                          LicenseMin = min(haarVector_Licenses);
+                          LicenseMean = mean(haarVector_Licenses);                                          
+                          NonLicenseMean = mean(haarVector_NonLicenses);
+                        
+                          %Discard in case of means too  close
+                         meanDiffThreshold = 5; %Possibly needed to be adjusted depending on the data set
+                        meanDifference = abs(LicenseMean - NonLicenseMean);
+                        
+                        if meanDifference < meanDiffThreshold
+                            % Skip this feature as it is not discriminative enough
+                            continue;
+                        end
+                        % Selected 100 steps for finding the threshold
+                        % iteratively
+                        for iter = 1:100
+                          %Initialize variable used for marking correct
+                         %or incorrect classification
+                            featureClassification = ones(size(imgWeights,1),1); % 0 = correctly classified | 1 = missclasiffied
+                            %Define min & max rating based on mean and max
+                            %and minimun global values
+                            minRating = LicenseMean-abs((iter/100)*(LicenseMean-LicenseMin));
+                            maxRating = LicenseMean+abs((iter/100)*(LicenseMax-LicenseMean));
+                            % capture all true positives values
+                            for value = 1:positiveSize
+                                if haarVector_Licenses(value) >= minRating && haarVector_Licenses(value) <= maxRating
+                                  featureClassification(value) = 0; %Correctly classified
+                                end
+                            end
+                            % Sum of weights incorrectly classified 
+                            LicenseRating = sum(imgWeights(1:positiveSize).*featureClassification(1:positiveSize));
+                            if LicenseRating < 0.05 % if less than 5% of License plates are misclassified
+                                % capture all false positive values
+                                for value = 1:negativeSize
+                                if haarVector_NonLicenses(value) >= minRating && haarVector_NonLicenses(value) <= maxRating
+                                else
+                                    featureClassification(value+positiveSize) = 0; % Correctly clasified
+                                end
+                           end
+                            % Sum of all weights of those nonLicense
+                                                        
+                            nonLicenseRating = sum(imgWeights(positiveSize+1:negativeSize+positiveSize).*featureClassification(positiveSize+1:negativeSize+positiveSize));
+                            % total error
+                            totalError = sum(imgWeights.*featureClassification);
+                                if totalError < .5 % When total error is lower than the half (Better than random)%
+                                    % Store weak classifier
+                                    Counter = Counter+1;
+                                    RatingDiff = [RatingDiff,(1-LicenseRating)-nonLicenseRating];
+                                    LicenseRating = [LicenseRating,1-LicenseRating];
+                                    NonLicenseRating = [NonLicenseRating,nonLicenseRating];
+                                    TotalError = [TotalError,totalError];
+                                    LowerBound = [LowerBound,minRating];
+                                    UpperBound = [UpperBound,maxRating];
+                                end
+                            end
+                        end
 
-% Loop over each image
-for imgIndex = 1:totalImages
-    currentImage = allImages{imgIndex};
-    integralImage = currentImage; % Already an integral image
+                        % In case of potential features find index of one with the 
+                        % maximum difference between true and false positives
+                           if size(RatingDiff) > 0
+                                maxRatingIndex = -inf; % Putting -infinite value to make sure of selecting a correct idex
+                                maxRatingDiff = max(RatingDiff);
+                                 for index = 1:size(RatingDiff,2)
+                                    if RatingDiff(index) == maxRatingDiff
+                                        maxRatingIndex = index; % found the index of maxRatingDiff
+                                        break;
+                                    end
+                                end
+                            end
 
-    % Initialize a feature index for each image
-    featureIndex = 1;
 
-    % Iterate over Haar types
-    for haarType = 1:size(haars, 1)
-        dimX = haars(haarType, 1);
-        dimY = haars(haarType, 2);
+                        % Store classifier related data into Classifier
+                        % variable
 
-        % Iterate over positions and scales within the image
-        for pixelX = 1:(imageWidth - dimX)
-            for pixelY = 1:(imageHeight - dimY)
-                % Calculate Haar feature value
-                haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dimX, dimY);
-                fprintf('Haar Type: %d, Value: %f, dimX:%d, dimY:%d, pixelX:%d, pixelY:%d\n', haarType, haarValue,dimX,dimY,pixelX,pixelY);
-                % Store in datafeatures matrix
-                datafeatures(imgIndex, featureIndex) = haarValue;
+                        if size(storeRatingDiff) > 0
+                           Classifier = [haarType,pixelX,pixelY,haarX,haarY,...
+                                maxRatingDiff,storeLicenseRating(maxRatingIndex),storeNonLicenseRating(maxRatingIndex),...
+                                storeLowerBound(maxRatingIndex),storeUpperBound(maxRatingIndex),...
+                                storeTotalError(maxRatingIndex)];
 
-                % Update featureIndex
-                featureIndex = featureIndex + 1;
+                            % Adaboost for updating the weights and obtain
+                            % alpha value of feature
+                            [imgWeights,alpha] = adaboost(Classifier,allImages,imgWeights,positiveSize,imgsSize);
+                            % append alpha to classifier metadata
+                            Classifier = [Classifier,alpha];
+                            %Store the corresponding classifier in
+                            %weakClassifier array
+                            weakClassifiers{size(weakClassifiers,2)+1} = Classifier;          
+                            end
+                        end
+                    end
+                end
             end
         end
-    end
+        printout = strcat('Finished Haar #',int2str(haarType),'\n');
+        fprintf(printout);
+    end 
+
+%Sorting the weak classifiers based on alpha values
+fprintf('Make strong classifiers from sorting according to alpha values\n');
+alphas = zeros(size(weakClassifiers,2),1);
+for i = 1:size(alphas,1)
+    % extract alpha column from classifier metadata
+    alphas(i) = weakClassifiers{i}(12);
 end
 
-%Limiting to 3433 since we are not sonsidering resized features
-datafeatures = datafeatures(1:300,1:3433);
+% sort weakClassifiers
+tempClassifiers = zeros(size(alphas,1),2); % 2 column
+% first column is simply original alphas
+tempClassifiers(:,1) = alphas;
+for i = 1:size(alphas,1)
+    % second column is the initial index of alpha values wrt original alphas
+   tempClassifiers(i,2) = i; 
+end
+
+tempClassifiers = sortrows(tempClassifiers,-1); % sort descending order
+
+% number of strong classifiers tailored to our implementation, might vary
+selectedClassifiers = zeros(size(weakClassifiers,2),12);
+for i = 1:size(weakClassifiers,2)
+    selectedClassifiers(i,:) = weakClassifiers{tempClassifiers(i,2)};
+end
+
+% save final set of strong classifiers into a .mat file for easier access
+save('finalClassifiers.mat','selectedClassifiers');
+%% 
+%Detection Part Based on final classifier model
+
+Licenses,LicensesBounds = detectLicenses('C:\Users\Usuario\Matlab Uni\CV-Project\Project CV\002\CroppedVehicles\002_04320.jpg_vehicle_5.jpg');
 
 %% 
-%Training phase, trying to implement cascade mechanism 
-% Number of iterations for each AdaBoost model
-itt = 5;
 
-% Training each stage
-numberOfStages = 5;
-models = cell(1, numberOfStages);
+function [Licenses,licencesBound] = detectLicenses(img)
+% preprocessing by Gaussian filtering
+img2 = img; % keep a copy of the original color 3D image
+img = imread(img);
+img = rgb2gray(img);
+img = conv2(img,fspecial('gaussian',3,3),'same');
+      
+% get image parameters
+[m,n] = size(img);
 
-for stage = 1:numberOfStages
-    fprintf('Training stage %d\n', stage);
+% number of iterations it will directly affect the possible matches
+pyramidItt = 10; 
+Licenses = []; % empty by default
+%Number of matches
+num_top_matches = 5;
+Licenses = zeros(num_top_matches, 5); % Store top 5 matches with iteration index
+
+
+% compute integral image
+intImg = integralImg(img);
+
+% load finalClassifiers
+load trainedClassifiers.mat % 200 classifiers
+
+%Cascaded Detector Structure: 7 levels, 300 classifiers
+
+stage1 = selectedClassifiers(1:2,:);
+stage2 = selectedClassifiers(3:9,:);
+stage3 = selectedClassifiers(10:30,:);
+stage4 = selectedClassifiers(31:74,:);
+stage5 = selectedClassifiers(75:124,:);
+stage6 = selectedClassifiers(125:199,:);
+stage7 = selectedClassifiers(200:300,:);
+
+% iterate through each window size/pyramid level
+    for itt = 1:pyramidItt
+        fprintf('Iteration #%d\n', itt);
+        for i = 1:2:m-18
+            if i + 18 > m 
+                break; % boundary case check
+            end
+            for j = 1:2:n-47
+                if j + 47 > n
+                    break; % boundary case check
+                end
+                window = intImg(i:i+17, j:j+46); 
     
-    [model, falsePositives] = trainCascadeStage(datafeatures, dataclass, itt);
-    models{stage} = model;
-    
-    % If there are more stages, add false positives to the training set
-    if stage < numberOfStages
-        % Update negative examples with false positives
-        numFalsePositives = size(falsePositives, 1);
-        datafeatures = [datafeatures; falsePositives]; % Add false positives to features
-        dataclass = [dataclass, -ones(1, numFalsePositives)]; % Add negative labels for false positives
-    end
-end
-% Number of iterations for AdaBoost
-%itt = 3;
-
-% Train the AdaBoost model
-%[estimateclasstotal, model] = adaboost('train', datafeatures, dataclass, itt);
-%% 
-
-% Calculate the training accuracy
-%accuracy = sum(dataclass == estimateclasstotal) / length(dataclass);
-%fprintf('Training Accuracy: %.2f%%\n', accuracy * 100);
-%% 
-%Sliding window approach to find 
-inputImagePath = "C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\001\CroppedVehicles\06310.jpg_vehicle_10.jpg";
-if isfile(inputImagePath)
-    % Load the image
-    inputImage = imread(inputImagePath);
-end
-
-%Transform into grayscale inputImage
-inputImage = im2gray(inputImage);
-
-matches = [];
-windowSize = [17, 47]; % Example window size
-stepSize = 5; % Example step size
-
-% Sliding window approach
-for x = 1:stepSize:(size(inputImage, 2) - windowSize(2))
-    for y = 1:stepSize:(size(inputImage, 1) - windowSize(1))
-        window = inputImage(y:y+windowSize(1)-1, x:x+windowSize(2)-1);
-        windowFeatures = getHaarFeatures(window);
-
-        isPositive = true;
-        for stage = 1:numberOfStages
-            classificationScore = adaboost('apply', windowFeatures, models{stage});
-            if classificationScore ~= 1
-                isPositive = false;
-                break; % Window rejected by this stage
+                stages = {stage1, stage2, stage3,stage4,stage5,stage6,stage7};
+                thresholds = [1,0.5,0.5,0.5,0.6,0.6,0.6];
+                if checkCascade(stages, window, thresholds)
+                    % save rectangular corner coordinates
+                    bounds = [j, i, j+46, i+17, itr];
+                    fprintf('License Plate detected!\n');
+                    Licenses = [Licenses; bounds];
+                end
             end
         end
+    
+        % create next image pyramid level
+        img = conv2(img,fspecial('gaussian',3,3),'same');
+        img = imresize(img, 0.8);
+        [m, n] = size(img);
+        intImg = integralImg(img);
+    end
 
-        if isPositive
-            % Window passed all stages, mark as positive detection
-            fprintf("Possible match in steps x:%d & y:%d",x,y);
-            matches = [matches; x, y, classificationScore];
+if size(Licenses,1) == 0 % No License detected
+   error('No License detected! Try again with a larger value of pyramidItt.'); 
+end
+
+%Selecting best bound box
+% upscale rectangular bound coordinates back to base level of pyramid
+    licencesBound = zeros(size(Licenses,1),4);
+    maxItr = max(Licenses(:,5)); % higher iterations have larger bounding boxes
+    for i = 1:size(Licenses,1)
+        licencesBound(i,:) = floor(Licenses(i,1:4)*1.2^(Licenses(i,5)-1));
+    end
+%filter out overlapping rectangular bounding boxes
+startRow = 1;
+for i = 1:size(LicenseBound,1)
+   if LicenseBound(i,1) == 0
+       startRow = startRow+1; % start with next row
+  end
+end
+LicenseBound = LicenseBound(startRow:end,:); % get rid of 0-filled rows
+
+% get the union of the areas of overlapping boxes
+LicenseBound = [min(LicenseBound(:,1)),min(LicenseBound(:,2)),max(LicenseBound(:,3)),max(LicenseBound(:,4))];
+
+figure,imshow(img2), hold on;
+if(~isempty(licencesBound));
+    for n=1:size(licencesBound,1)
+        toleranceX = floor(0.1*(licencesBound(n,3)-licencesBound(n,1)));
+        toleranceY = floor(0.1*(licencesBound(n,4)-licencesBound(n,2)));
+        % original bounds
+        x1=licencesBound(n,1); y1=licencesBound(n,2);
+        x2=licencesBound(n,3); y2=licencesBound(n,4);
+        % adjusted bounds to get wider License capture
+        x1t=licencesBound(n,1)-toleranceX; y1t=licencesBound(n,2)-toleranceY;
+        x2t=licencesBound(n,3)+toleranceX; y2t=licencesBound(n,4)+toleranceY;
+        imSize = size(imread(img2));
+        % if adjusted bounds will lead to out-of-bounds plotting, use original bounds
+        if x1t < 1 || y1t < 1 || x2t > imSize(2) || y2t > imSize(1)
+            fprintf('Out of bounds adjustments. Plotting original values...\n');
+            plot([x1 x1 x2 x2 x1],[y1 y2 y2 y1 y1],'LineWidth',2);
+        else
+            plot([x1t x1t x2t x2t x1t],[y1t y2t y2t y1t y1t],'LineWidth',2);
         end
     end
 end
 
+title('Possible license matchs');
+hold off;
 
-%% 
-%Displaying possible areas of interest
-imshow(inputImage);
-hold on; % This keeps the image displayed while we draw the rectangle
-
-% Assuming coords is a 2-element vector [x, y]
-
-x = matches(1);
-y = matches(2);
-
-% Define the width and height of the rectangle
-width = 47;
-height = 17;
-
-% Draw the rectangle
-for i = 1:size(matches, 1)
-    x = matches(i, 1);
-    y = matches(i, 2);
-
-    rectangle('Position', [x, y, width, height], 'EdgeColor', 'r', 'LineWidth', 2);
 end
 
-hold off; % Release the hold on the figure
 
-
-%% 
-
-function [model, falsePositives] = trainCascadeStage(datafeatures, dataclass, itt)
-    % Train the AdaBoost model
-    [~, model] = adaboost('train', datafeatures, dataclass, itt);
-
-    % Apply the trained model to the data
-    estimateclass = adaboost('apply', datafeatures, model);
-    disp(size(estimateclass));
-    estimateclass = estimateclass';
-
-    % Identify false positives: Negative examples incorrectly classified as positive
-    falsePositives = datafeatures(estimateclass == 1 & dataclass == -1, :);
-end  
-
-%% 
-%%%Code that obtains the haarFeatures of one image
-function [datafeatures] = getHaarFeatures(inputImage)
-    % Read and convert the image to an integral image
-
-    integralImage = integralImg(inputImage);
-  
-    
-    % Haar feature dimensions
-    haars = [1,2; 2,1; 1,3; 3,1; 2,2];
-    
-    % Image dimensions (adjust these according to your specific image)
-    imageWidth = size(integralImage, 2);
-    imageHeight = size(integralImage, 1);
-    
-    % Initialize the total number of features
-    numHaarFeatures = 3433;
-    
-    % Output the total number of Haar features
-    fprintf('Total number of Haar features considering scales: %d\n', numHaarFeatures);
-    
-    % Initialize the datafeatures array for the single image
-    datafeatures = zeros(1, numHaarFeatures);
-    
-    % Initialize feature index
-    featureIndex = 1;
-    
-    % Iterate over Haar types
-    for haarType = 1:size(haars, 1)
-        dimX = haars(haarType, 1);
-        dimY = haars(haarType, 2);
-    
-        % Iterate over positions and scales within the image
-        for pixelX = 1:(imageWidth - dimX - 1)
-            for pixelY = 1:(imageHeight - dimY - 1)
-                % Calculate Haar feature value
-                haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dimX, dimY);
-                fprintf('Haar Type: %d, Value: %f, dimX:%d, dimY:%d, pixelX:%d, pixelY:%d\n', haarType, haarValue, dimX, dimY, pixelX, pixelY);
-                
-                % Store in datafeatures array
-                datafeatures(featureIndex) = haarValue;
-    
-                % Update featureIndex
-                featureIndex = featureIndex + 1;
-            end
-        end
+function output = cascade(classifiers,img,thresh)
+result = 0;
+px = size(classifiers,1);
+weightSum = sum(classifiers(:,12));
+% iterate through each classifier
+for i = 1:px
+    classifier = classifiers(i,:);
+    haar = classifier(1);
+    pixelX = classifier(2);
+    pixelY = classifier(3);
+    haarX = classifier(4);
+    haarY = classifier(5);
+    % calculate the feature value for the subwindow using the current
+    % classifier
+    haarVal = calcHaarVal(img,haar,pixelX,pixelY,haarX,haarY);
+    if haarVal >= classifier(9) && haarVal <= classifier(10)
+        % increase score by the weight of the corresponding classifier
+        score = classifier(12);
+    else
+        score = 0;
     end
+   result = result + score;
 end
-
-% Now datafeatures contains the Haar features for the single image
-
-
-function outimg = integralImg (inimg)
-    % cumulative sum for each pixel of all rows and columns to the left and
-    % above the corresponding pixel
-    outimg = cumsum(cumsum(double(inimg),2));
+% compare resulting weighted success rate to the threshold value
+if result >= weightSum*thresh
+    output = 1; % hit
+else
+    output = 0; % miss
 end
-
-function intensity = getCorners(img,startX,startY,endX,endY)
-    a = img(startY,startX);
-    b = img(startY,endX);
-    c = img(endY,startX);
-    d = img(endY,endX);
-    intensity = d-(b+c)+a; % by property of the integral image
-end
-
-function val = calcHaarVal(img,haar,pixelX,pixelY,haarX,haarY)
-% img: integral image of an input image
-% haar: which Haar feature (1-5)
-% pixelX/Y: start point in (X,Y)
-% haarX/Y: Haar feature size in X and Y directions
-
-% getCorners() finds the total of the pixel intensity values in a white/black "box"
-    moveX = haarX-1;
-    moveY = haarY-1;
-   
-    
-    if haar == 1 % top/down white-black
-        white = getCorners(img,pixelX,pixelY,pixelX+moveX,pixelY+floor(moveY/2));
-        test = floor(moveY/2);
-        fprintf("%f",test);
-        black = getCorners(img,pixelX,pixelY+ceil(moveY/2),pixelX+moveX,pixelY+moveY);
-        val = white-black;
-    elseif haar == 2 % left/right white-black
-        white = getCorners(img,pixelX,pixelY,pixelX+floor(moveX/2),pixelY+moveY);
-        black = getCorners(img,pixelX+ceil(moveX/2),pixelY,pixelX+moveX,pixelY+moveY);
-        val = white-black;
-    elseif haar == 3 % top/mid/bottom white-black-white
-        white1 = getCorners(img,pixelX,pixelY,pixelX+moveX,pixelY+floor(moveY/3));
-        black = getCorners(img,pixelX,pixelY+ceil(moveY/3),pixelX+moveX,pixelY+floor((moveY)*(2/3)));
-        white2 = getCorners(img,pixelX,pixelY+ceil((moveY)*(2/3)),pixelX+moveX,pixelY+moveY);
-        val = white1 + white2 - black;
-    elseif haar == 4 % left/mid/right white-black-white
-        white1 = getCorners(img,pixelX,pixelY,pixelX+floor(moveX/3),pixelY+moveY);
-        black = getCorners(img,pixelX+ceil(moveX/3),pixelY,pixelX+floor((moveX)*(2/3)),pixelY+moveY);
-        white2 = getCorners(img,pixelX+ceil((moveX)*(2/3)),pixelY,pixelX+moveX,pixelY+moveY);
-        val = white1 + white2 - black;
-    elseif haar == 5 % checkerboard-style white-black-white-black
-        white1 = getCorners(img,pixelX,pixelY,pixelX+floor(moveX/2),pixelY+floor(moveY/2));
-        black1 = getCorners(img,pixelX+ceil(moveX/2),pixelY,pixelX+moveX,pixelY+floor(moveY/2));
-        black2 = getCorners(img,pixelX,pixelY+ceil(moveY/2),pixelX+floor(moveX/2),pixelY+moveY);
-        white2 = getCorners(img,pixelX+ceil(moveX/2),pixelY+ceil(moveY/2),pixelX+moveX,pixelY+moveY);
-        val = white1+white2-(black1+black2);
-    end
 end
 
 
-function haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dimX, dimY)
+
+
+function haarValue = calcHaarValues(img, haarType, pixelX, pixelY, dimX, dimY)
     % integralImage: The integral image
     % haarType: Type of Haar feature (determined by its dimensions)
     % pixelX, pixelY: Top left coordinates of the Haar feature
@@ -369,39 +440,39 @@ function haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dim
     haarValue = 0;
 
     function sum = rectSum(x1, y1, x2, y2)
-        sum = integralImage(y2, x2) - integralImage(y1, x2) - integralImage(y2, x1) + integralImage(y1, x1);
+        sum = img(y2, x2) - img(y1, x2) - img(y2, x1) + img(y1, x1);
     end
+
 
      switch haarType
         case 1 % Horizontal two-rectangle feature
-            midY = pixelY + dimY/2;
+            midX = pixelX + round(dimX/2);
+            leftSum = rectSum(pixelX, pixelY, midX, pixelY + dimY);
+            rightSum = rectSum(midX, pixelY, pixelX + dimX, pixelY + dimY);
+            haarValue = leftSum - rightSum;  
+        case 2 % Vertical two-rectangle feature
+            midY = pixelY + round(dimY/2);
             topSum = rectSum(pixelX, pixelY, pixelX + dimX, midY);
             bottomSum = rectSum(pixelX, midY, pixelX + dimX, pixelY + dimY);
             haarValue = topSum - bottomSum;
 
-        case 2 % Vertical two-rectangle feature
-            midX = pixelX + dimX/2;
-            leftSum = rectSum(pixelX, pixelY, midX, pixelY + dimY);
-            rightSum = rectSum(midX, pixelY, pixelX + dimX, pixelY + dimY);
-            haarValue = leftSum - rightSum;
-
         case 3 % Horizontal three-rectangle feature
-            thirdY = dimY / 3;
-            topSum = rectSum(pixelX, pixelY, pixelX + dimX, pixelY + thirdY);
-            middleSum = rectSum(pixelX, pixelY + thirdY, pixelX + dimX, pixelY + 2*thirdY);
-            bottomSum = rectSum(pixelX, pixelY + 2*thirdY, pixelX + dimX, pixelY + dimY);
-            haarValue = topSum - 2*middleSum + bottomSum;
-
-        case 4 % Vertical three-rectangle feature
-            thirdX = dimX / 3;
+            thirdX = round(dimX / 3);
             leftSum = rectSum(pixelX, pixelY, pixelX + thirdX, pixelY + dimY);
             middleSum = rectSum(pixelX + thirdX, pixelY, pixelX + 2*thirdX, pixelY + dimY);
             rightSum = rectSum(pixelX + 2*thirdX, pixelY, pixelX + dimX, pixelY + dimY);
-            haarValue = leftSum - 2*middleSum + rightSum;
+            haarValue = leftSum - middleSum + rightSum;
+
+        case 4 % Vertical three-rectangle feature
+            thirdY = round(dimY / 3);
+            topSum = rectSum(pixelX, pixelY, pixelX + dimX, pixelY + thirdY);
+            middleSum = rectSum(pixelX, pixelY + thirdY, pixelX + dimX, pixelY + 2*thirdY);
+            bottomSum = rectSum(pixelX, pixelY + 2*thirdY, pixelX + dimX, pixelY + dimY);
+            haarValue = topSum - middleSum + bottomSum;
 
         case 5 % Four-rectangle feature
-            midX = pixelX + dimX/2;
-            midY = pixelY + dimY/2;
+            midX = pixelX + round(dimX/2);
+            midY = pixelY + round(dimY/2);
             topLeftSum = rectSum(pixelX, pixelY, midX, midY);
             topRightSum = rectSum(midX, pixelY, pixelX + dimX, midY);
             bottomLeftSum = rectSum(pixelX, midY, midX, pixelY + dimY);
@@ -410,149 +481,63 @@ function haarValue = calcHaarValues(integralImage, haarType, pixelX, pixelY, dim
     end
 end
 
-function [estimateclasstotal,model]=adaboost(mode,datafeatures,dataclass_or_model,itt)
-% This function AdaBoost, consist of two parts a simpel weak classifier and
-% a boosting part:
-% The weak classifier tries to find the best treshold in one of the data
-% dimensions to sepparate the data into two classes -1 and 1
-% The boosting part calls the clasifier iteratively, after every classification
-% step it changes the weights of miss-classified examples. This creates a
-% cascade of "weak classifiers" which behaves like a "strong classifier"
-%
-%  Training mode:
-%    [estimateclass,model]=adaboost('train',datafeatures,dataclass,itt)
-%  Apply mode:
-%    estimateclass=adaboost('apply',datafeatures,model)
-% 
-%  inputs/outputs:
-%    datafeatures : An Array with size number_samples x number_features
-%    dataclass : An array with the class off all examples, the class
-%                 can be -1 or 1
-%    itt : The number of training itterations
-%    model : A struct with the cascade of weak-classifiers
-%    estimateclass : The by the adaboost model classified data
-%               
-%  %% Example
-%
-%  example.m
-%
-%  Function is written by D.Kroon University of Twente (August 2010)
-switch(mode)
-    case 'train'
-        % Train the adaboost model
-        
-        % Set the data class 
-        dataclass=dataclass_or_model(:);
-        model=struct;
-        
-        % Weight of training samples, first every sample is even important
-        % (same weight)
-        D=ones(length(dataclass),1)/length(dataclass);
-        
-        % This variable will contain the results of the single weak
-        % classifiers weight by their alpha
-        estimateclasssum=zeros(size(dataclass));
-        
-        % Calculate max min of the data
-        boundary=[min(datafeatures,[],1) max(datafeatures,[],1)];
-        % Do all model training itterations
-        for t=1:itt
-            % Find the best treshold to separate the data in two classes
-            [estimateclass,err,h] = WeightedThresholdClassifier(datafeatures,dataclass,D);
-            % Weak classifier influence on total result is based on the current
-            % classification error
-            alpha=1/2 * log((1-err)/max(err,eps));
-            
-            % Store the model parameters
-            model(t).alpha = alpha;
-            model(t).dimension=h.dimension;
-            model(t).threshold=h.threshold;
-            model(t).direction=h.direction;
-            model(t).boundary = boundary;
-            % We update D so that wrongly classified samples will have more weight
-            D = D.* exp(-model(t).alpha.*dataclass.*estimateclass);
-            D = D./sum(D);
-            
-            % Calculate the current error of the cascade of weak
-            % classifiers
-            estimateclasssum=estimateclasssum +estimateclass*model(t).alpha;
-            estimateclasstotal=sign(estimateclasssum);
-            model(t).error=sum(estimateclasstotal~=dataclass)/length(dataclass);
-            if(model(t).error==0), break; end
+% adaboost.m - boosts classifiers adaptively by updating their weights
+% alpha values, and for individual images by updating image weights
+function [newWeights,alpha] = adaboost(classifier, images, imgWeights,positiveSize,imgsSize)
+captures = zeros(imgsSize,1);
+error = 0;
+
+for i = 1:imgsSize
+    img = images{i};
+    % obtains classifier metadata from fields in the row vector 
+    haar = classifier(1);
+    pixelX = classifier(2);
+    pixelY = classifier(3);
+    haarX = classifier(4);
+    haarY = classifier(5);
+    % calculates intensity difference between black-white region of the
+    % Haar feature and checks against the precalculated range
+    haarVal = calcHaarVal(img,haar,pixelX,pixelY,haarX,haarY);
+    if haarVal >= classifier(9) && haarVal <= classifier(10) % if falls between correct value
+        if i <= positiveSize % if its a license plate
+            captures(i) = 1; % correct capture
+        else
+            captures(i) = 0; % error
+            error = error + imgWeights(i); % increase weighted error count
         end
-        
-    case 'apply' 
-        % Apply Model on the test data
-        model=dataclass_or_model;
-        
-        % Limit datafeatures to orgininal boundaries
-        if(length(model)>1);
-            minb=model(1).boundary(1:end/2);
-            maxb=model(1).boundary(end/2+1:end);
-            datafeatures=bsxfun(@min,datafeatures,maxb);
-            datafeatures=bsxfun(@max,datafeatures,minb);
+    else % if falls outside the expected range
+        if i <= positiveSize % if is a Plate
+            captures(i) = 0;
+            error = error + imgWeights(i); % error
+        else 
+            captures(i) = 1;
         end
-    
-        % Add all results of the single weak classifiers weighted by their alpha 
-        estimateclasssum=zeros(size(datafeatures,1),1);
-        for t=1:length(model);
-            estimateclasssum=estimateclasssum+model(t).alpha*ApplyClassTreshold(model(t), datafeatures);
-        end
-        % If the total sum of all weak classifiers
-        % is less than zero it is probablly class -1 otherwise class 1;
-        estimateclasstotal=sign(estimateclasssum);
-        
-    otherwise
-        error('adaboost:inputs','unknown mode');
-end
-end
-function [estimateclass,err,h] = WeightedThresholdClassifier(datafeatures,dataclass,dataweight)
-% This is an example of an "Weak Classifier", it caculates the optimal
-% threshold for all data feature dimensions.
-% It then selects the dimension and  treshold which divides the 
-% data into two class with the smallest error.
-% Number of treshold steps
-ntre=2e5;
-% Split the data in two classes 1 and -1
-r1=datafeatures(dataclass<0,:); w1=dataweight(dataclass<0);
-r2=datafeatures(dataclass>0,:); w2=dataweight(dataclass>0);
-% Calculate the min and max for every dimensions
-minr=min(datafeatures,[],1)-1e-10; maxr=max(datafeatures,[],1)+1e-10;
-% Make a weighted histogram of the two classes
-p2c= ceil((bsxfun(@rdivide,bsxfun(@minus,r2,minr),(maxr-minr)))*(ntre-1)+1+1e-9);   p2c(p2c>ntre)=ntre;
-p1f=floor((bsxfun(@rdivide,bsxfun(@minus,r1,minr),(maxr-minr)))*(ntre-1)+1-1e-9);  p1f(p1f<1)=1;
-ndims=size(datafeatures,2);
-i1=repmat(1:ndims,size(p1f,1),1);  i2=repmat(1:ndims,size(p2c,1),1);
-h1f=accumarray([p1f(:) i1(:)],repmat(w1(:),ndims,1),[ntre ndims],[],0);
-h2c=accumarray([p2c(:) i2(:)],repmat(w2(:),ndims,1),[ntre ndims],[],0);
-% This function calculates the error for every all possible treshold value
-% and dimension
-h2ic=cumsum(h2c,1);
-h1rf=cumsum(h1f(end:-1:1,:),1); h1rf=h1rf(end:-1:1,:);
-e1a=h1rf+h2ic;
-e2a=sum(dataweight)-e1a;
-% We want the treshold value and dimension with the minimum error
-[err1a,ind1a]=min(e1a,[],1);  dim1a=(1:ndims); dir1a=ones(1,ndims);
-[err2a,ind2a]=min(e2a,[],1);  dim2a=(1:ndims); dir2a=-ones(1,ndims);
-A=[err1a(:),dim1a(:),dir1a(:),ind1a(:);err2a(:),dim2a(:),dir2a(:),ind2a(:)];
-[err,i]=min(A(:,1)); dim=A(i,2); dir=A(i,3); ind=A(i,4);
-thresholds = linspace(minr(dim),maxr(dim),ntre);
-thr=thresholds(ind);
-% Apply the new treshold
-h.dimension = dim; 
-h.threshold = thr; 
-h.direction = dir;
-estimateclass=ApplyClassTreshold(h,datafeatures);
-end
-function y = ApplyClassTreshold(h, x)
-% Draw a line in one dimension (like horizontal or vertical)
-% and classify everything below the line to one of the 2 classes
-% and everything above the line to the other class.
-if(h.direction == 1)
-    y =  double(x(:,h.dimension) >= h.threshold);
-else
-    y =  double(x(:,h.dimension) < h.threshold);
-end
-y(y==0) = -1;
+    end
 end
 
+alpha = 0.5*log((1-error)/error); % updates classifier weight (alpha)
+
+% modifies images' weights by whether it is a successful capture or not
+% correct captures result in lower weights; false captures result in higher
+% weight to put more emphasis on them
+for i = 1:imgsSize
+    if captures(i) == 0
+        imgWeights(i) = imgWeights(i).*exp(alpha);
+    else
+        imgWeights(i) = imgWeights(i).*exp(-alpha);
+    end
+end
+imgWeights = imgWeights./sum(imgWeights); % normalize image weights
+newWeights = imgWeights; % pass as function output
+end
+
+function passed = checkCascade(stages, window, thresholds)
+    for level = 1:length(stages)
+        if cascade(stages{level}, window, thresholds(level)) ~= 1
+            passed = false;
+            return;
+        end
+        fprintf('Passed level %d cascade.\n', level);
+    end
+    passed = true;
+end
