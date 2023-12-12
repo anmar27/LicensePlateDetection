@@ -1,7 +1,7 @@
 %Code that generates cropped vehicles for later use for negative images
 
 % Define the path to the directory containing images
-folderPath = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\002';
+folderPath = '../Project CV\002';
 
 % List all JPG files in the folder
 imageFiles = dir(fullfile(folderPath, '*.jpg'));
