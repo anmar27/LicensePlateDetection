@@ -2,8 +2,8 @@
 %enhance the object detection
 clear all;
 clc; 
-positiveImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\testpositive';
-negativeImagesFolder = 'C:\Users\Usuario\OneDrive - Hanzehogeschool Groningen\Escritorio\Matlab Uni\CV-Project\Project CV\matlab-viola-jones\trainHaar\testnegatives';
+positiveImagesFolder = '..\testpostives'
+negativeImagesFolder = '..\testnegatives';
 
 %Image selection
 displacement = 0;
